@@ -3,7 +3,7 @@ import yfinance as yf
 import pandas as pd
 from fuzzywuzzy import process
 
-# 预设公司数据库（实际应用中可替换为更完整的数据库）
+# 预设公司数据库（包含更多公司）
 COMPANY_DATABASE = {
     "腾讯控股": "0700.HK",
     "阿里巴巴": "9988.HK",
@@ -19,19 +19,24 @@ COMPANY_DATABASE = {
     "拼多多": "PDD",
     "比亚迪": "1211.HK",
     "小米集团": "1810.HK",
-    "中国平安": "601318.SS"
+    "中国平安": "601318.SS",
+    "工商银行": "601398.SS",
+    "建设银行": "601939.SS",
+    "茅台": "600519.SS",
+    "五粮液": "000858.SZ",
+    "中国移动": "0941.HK"
 }
 
 # 页面设置
 st.set_page_config(
-    page_title="财报分析助手",
+    page_title="财报数据查询工具",
     page_icon="📊",
-    layout="centered"
+    layout="wide"
 )
 
 # 主界面
-st.title("📊 财报分析助手")
-st.write("输入公司名称，获取智能财报分析")
+st.title("📊 财报数据查询工具")
+st.write("输入公司名称，获取详细财务数据")
 
 # 模糊搜索功能
 def fuzzy_search_companies(query, choices, limit=5):
@@ -46,8 +51,8 @@ if company_query:
     if matches:
         selected_company = st.selectbox("选择公司", matches)
         
-        if st.button("生成财报分析"):
-            with st.spinner("正在分析财报数据..."):
+        if st.button("查询财务数据"):
+            with st.spinner("正在获取财务数据..."):
                 try:
                     # 获取股票代码
                     ticker = COMPANY_DATABASE[selected_company]
@@ -59,105 +64,69 @@ if company_query:
                     cash_flow = stock.cashflow
                     
                     # 显示公司基本信息
-                    st.subheader(f"{selected_company} ({ticker}) 财报分析")
+                    st.subheader(f"{selected_company} ({ticker}) 财务数据")
                     
-                    # 关键财务指标
+                    # 资产负债表
                     st.divider()
-                    st.subheader("关键财务指标")
+                    st.subheader("资产负债表 (最近4个季度)")
+                    if not balance_sheet.empty:
+                        st.dataframe(balance_sheet.iloc[:, :4].style.format("{:.2f}"))
+                    else:
+                        st.warning("无资产负债表数据")
                     
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        try:
-                            revenue = income_stmt.loc["Total Revenue"].iloc[0]/1e9
-                            st.metric("营业收入", f"{revenue:.2f} B")
-                        except:
-                            pass
+                    # 利润表
+                    st.divider()
+                    st.subheader("利润表 (最近4个季度)")
+                    if not income_stmt.empty:
+                        st.dataframe(income_stmt.iloc[:, :4].style.format("{:.2f}"))
+                    else:
+                        st.warning("无利润表数据")
+                    
+                    # 现金流量表
+                    st.divider()
+                    st.subheader("现金流量表 (最近4个季度)")
+                    if not cash_flow.empty:
+                        st.dataframe(cash_flow.iloc[:, :4].style.format("{:.2f}"))
+                    else:
+                        st.warning("无现金流量表数据")
+                    
+                    # 关键财务比率
+                    st.divider()
+                    st.subheader("关键财务比率")
+                    
+                    ratios = pd.DataFrame()
+                    
+                    try:
+                        # 盈利能力比率
+                        if "Total Revenue" in income_stmt.index and "Net Income" in income_stmt.index:
+                            ratios["毛利率(%)"] = [(income_stmt.loc["Gross Profit"] / income_stmt.loc["Total Revenue"] * 100).iloc[0]]
+                            ratios["净利率(%)"] = [(income_stmt.loc["Net Income"] / income_stmt.loc["Total Revenue"] * 100).iloc[0]]
                         
-                        try:
-                            net_income = income_stmt.loc["Net Income"].iloc[0]/1e9
-                            st.metric("净利润", f"{net_income:.2f} B")
-                        except:
-                            pass
-                    
-                    with col2:
-                        try:
-                            assets = balance_sheet.loc["Total Assets"].iloc[0]/1e9
-                            st.metric("总资产", f"{assets:.2f} B")
-                        except:
-                            pass
+                        # 偿债能力比率
+                        if "Total Current Assets" in balance_sheet.index and "Total Current Liabilities" in balance_sheet.index:
+                            ratios["流动比率"] = [balance_sheet.loc["Total Current Assets"].iloc[0] / balance_sheet.loc["Total Current Liabilities"].iloc[0]]
                         
-                        try:
-                            debt = balance_sheet.loc["Total Debt"].iloc[0]/1e9
-                            st.metric("总负债", f"{debt:.2f} B")
-                        except:
-                            pass
-                    
-                    with col3:
-                        try:
-                            operating_cash = cash_flow.loc["Operating Cash Flow"].iloc[0]/1e9
-                            st.metric("经营现金流", f"{operating_cash:.2f} B")
-                        except:
-                            pass
+                        if "Total Debt" in balance_sheet.index and "Total Stockholder Equity" in balance_sheet.index:
+                            ratios["负债权益比"] = [balance_sheet.loc["Total Debt"].iloc[0] / balance_sheet.loc["Total Stockholder Equity"].iloc[0]]
                         
-                        try:
-                            roe = (income_stmt.loc["Net Income"].iloc[0]/balance_sheet.loc["Total Stockholder Equity"].iloc[0])*100
-                            st.metric("ROE", f"{roe:.2f}%")
-                        except:
-                            pass
+                        # 运营效率比率
+                        if "Total Revenue" in income_stmt.index and "Total Assets" in balance_sheet.index:
+                            ratios["资产周转率"] = [income_stmt.loc["Total Revenue"].iloc[0] / balance_sheet.loc["Total Assets"].iloc[0]]
+                        
+                        # 投资回报比率
+                        if "Net Income" in income_stmt.index and "Total Stockholder Equity" in balance_sheet.index:
+                            ratios["ROE(%)"] = [(income_stmt.loc["Net Income"].iloc[0] / balance_sheet.loc["Total Stockholder Equity"].iloc[0] * 100)]
+                        
+                        if not ratios.empty:
+                            st.dataframe(ratios.T.style.format("{:.2f}"), use_container_width=True)
+                        else:
+                            st.warning("无法计算财务比率")
                     
-                    # 财务健康度分析
-                    st.divider()
-                    st.subheader("财务健康度分析")
-                    
-                    try:
-                        current_ratio = balance_sheet.loc["Total Current Assets"].iloc[0]/balance_sheet.loc["Total Current Liabilities"].iloc[0]
-                        st.write(f"**流动比率**: {current_ratio:.2f} (理想值>1.5)")
-                    except:
-                        pass
-                    
-                    try:
-                        debt_to_equity = balance_sheet.loc["Total Debt"].iloc[0]/balance_sheet.loc["Total Stockholder Equity"].iloc[0]
-                        st.write(f"**负债权益比**: {debt_to_equity:.2f} (理想值<1)")
-                    except:
-                        pass
-                    
-                    # 盈利能力分析
-                    st.divider()
-                    st.subheader("盈利能力分析")
-                    
-                    try:
-                        gross_margin = (income_stmt.loc["Gross Profit"].iloc[0]/income_stmt.loc["Total Revenue"].iloc[0])*100
-                        st.write(f"**毛利率**: {gross_margin:.2f}%")
-                    except:
-                        pass
-                    
-                    try:
-                        net_margin = (income_stmt.loc["Net Income"].iloc[0]/income_stmt.loc["Total Revenue"].iloc[0])*100
-                        st.write(f"**净利率**: {net_margin:.2f}%")
-                    except:
-                        pass
-                    
-                    # 生成AI分析总结
-                    st.divider()
-                    st.subheader("AI分析总结")
-                    
-                    # 这里可以接入真正的AI分析，以下为模拟示例
-                    analysis_text = f"""
-                    **{selected_company}**最新财报分析：
-                    
-                    1. **营收规模**: 公司年营收达{revenue:.2f}十亿美元，在行业中处于{'领先' if revenue > 50 else '中等'}水平。
-                    
-                    2. **盈利能力**: 净利率{net_margin:.2f}%，表明公司{'盈利能力强劲' if net_margin > 15 else '盈利能力一般'}。
-                    
-                    3. **财务健康**: 流动比率{current_ratio:.2f}，{'财务结构稳健' if current_ratio > 1.5 else '需关注短期偿债能力'}。
-                    
-                    4. **投资回报**: ROE{roe:.2f}%，为股东创造{'优异' if roe > 20 else '一般'}的回报。
-                    """
-                    
-                    st.write(analysis_text)
+                    except Exception as e:
+                        st.warning(f"计算财务比率时出错: {str(e)}")
                     
                 except Exception as e:
-                    st.error(f"获取财报数据失败: {str(e)}")
+                    st.error(f"获取财务数据失败: {str(e)}")
     else:
         st.warning("没有找到匹配的公司")
 
@@ -165,5 +134,9 @@ if company_query:
 st.sidebar.title("使用说明")
 st.sidebar.write("1. 输入公司名称（支持模糊搜索）")
 st.sidebar.write("2. 从下拉列表选择准确公司")
-st.sidebar.write("3. 点击按钮生成财报分析")
-st.sidebar.write("4. 查看关键指标和AI分析")
+st.sidebar.write("3. 点击按钮查询财务数据")
+st.sidebar.write("4. 查看完整财务报表和关键比率")
+
+# 页脚
+st.divider()
+st.caption("数据来源: Yahoo Finance | 更新时间: " + pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"))
