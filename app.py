@@ -1,79 +1,169 @@
 import streamlit as st
+import yfinance as yf
 import pandas as pd
-import matplotlib.pyplot as plt
-import requests
-from bs4 import BeautifulSoup
+from fuzzywuzzy import process
 
-# 模拟财报数据获取（实际可接入金融API）
-def get_financial_data(stock_code):
-    # 这里使用模拟数据，实际项目可替换为真实API调用
-    data = {
-        "年份": [2020, 2021, 2022, 2023],
-        "营业收入(亿元)": [120, 150, 180, 200],
-        "净利润(亿元)": [10, 15, 18, 22],
-        "毛利率(%)": [30, 32, 35, 38],
-        "资产负债率(%)": [45, 48, 50, 47]
-    }
-    return pd.DataFrame(data)
+# 预设公司数据库（实际应用中可替换为更完整的数据库）
+COMPANY_DATABASE = {
+    "腾讯控股": "0700.HK",
+    "阿里巴巴": "9988.HK",
+    "贵州茅台": "600519.SS",
+    "宁德时代": "300750.SZ",
+    "苹果": "AAPL",
+    "微软": "MSFT",
+    "谷歌": "GOOGL",
+    "亚马逊": "AMZN",
+    "特斯拉": "TSLA",
+    "美团": "3690.HK",
+    "京东": "9618.HK",
+    "拼多多": "PDD",
+    "比亚迪": "1211.HK",
+    "小米集团": "1810.HK",
+    "中国平安": "601318.SS"
+}
 
-st.title("📊 财报速读神器")
-stock_code = st.text_input("输入股票代码（如：AAPL）", "AAPL")
+# 页面设置
+st.set_page_config(
+    page_title="财报分析助手",
+    page_icon="📊",
+    layout="centered"
+)
 
-if st.button("生成分析报告"):
-    with st.spinner("正在获取数据..."):
-        df = get_financial_data(stock_code)
+# 主界面
+st.title("📊 财报分析助手")
+st.write("输入公司名称，获取智能财报分析")
+
+# 模糊搜索功能
+def fuzzy_search_companies(query, choices, limit=5):
+    results = process.extract(query, choices, limit=limit)
+    return [result[0] for result in results if result[1] > 50]
+
+# 公司搜索
+company_query = st.text_input("输入公司名称", placeholder="例如：腾讯、苹果...")
+
+if company_query:
+    matches = fuzzy_search_companies(company_query, list(COMPANY_DATABASE.keys()))
+    if matches:
+        selected_company = st.selectbox("选择公司", matches)
         
-        st.subheader(f"{stock_code} 财务分析报告")
-        
-        # 显示数据表格
-        st.dataframe(df)
-        
-        # 创建图表
-        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-        
-        # 营收趋势
-        axes[0, 0].plot(df['年份'], df['营业收入(亿元)'], marker='o')
-        axes[0, 0].set_title('营业收入趋势')
-        axes[0, 0].grid(True)
-        
-        # 净利润趋势
-        axes[0, 1].plot(df['年份'], df['净利润(亿元)'], marker='o', color='orange')
-        axes[0, 1].set_title('净利润趋势')
-        axes[0, 1].grid(True)
-        
-        # 毛利率
-        axes[1, 0].bar(df['年份'], df['毛利率(%)'], color='green')
-        axes[1, 0].set_title('毛利率变化')
-        axes[1, 0].grid(True)
-        
-        # 资产负债率
-        axes[1, 1].bar(df['年份'], df['资产负债率(%)'], color='red')
-        axes[1, 1].set_title('资产负债率')
-        axes[1, 1].grid(True)
-        
-        plt.tight_layout()
-        st.pyplot(fig)
-        
-        # 关键指标分析
-        latest_year = df['年份'].max()
-        prev_year = latest_year - 1
-        
-        revenue_growth = ((df[df['年份'] == latest_year]['营业收入(亿元)'].values[0] / 
-                          df[df['年份'] == prev_year]['营业收入(亿元)'].values[0]) - 1) * 100
-        
-        profit_growth = ((df[df['年份'] == latest_year]['净利润(亿元)'].values[0] / 
-                         df[df['年份'] == prev_year]['净利润(亿元)'].values[0]) - 1) * 100
-        
-        st.subheader("📈 关键指标解读")
-        st.markdown(f"- **{latest_year}年营业收入**：{df[df['年份'] == latest_year]['营业收入(亿元)'].values[0]}亿元，同比增长{revenue_growth:.2f}%")
-        st.markdown(f"- **{latest_year}年净利润**：{df[df['年份'] == latest_year]['净利润(亿元)'].values[0]}亿元，同比增长{profit_growth:.2f}%")
-        st.markdown(f"- **毛利率**：{df[df['年份'] == latest_year]['毛利率(%)'].values[0]}%")
-        st.markdown(f"- **资产负债率**：{df[df['年份'] == latest_year]['资产负债率(%)'].values[0]}%")
-        
-        # 简单结论
-        if revenue_growth > 10 and profit_growth > 15:
-            st.success("📊 财务状况良好，营收和利润均呈现强劲增长趋势")
-        elif revenue_growth > 0 and profit_growth > 0:
-            st.info("📊 财务状况稳定，营收和利润持续增长")
-        else:
-            st.warning("📊 财务状况有待改善，建议进一步分析")
+        if st.button("生成财报分析"):
+            with st.spinner("正在分析财报数据..."):
+                try:
+                    # 获取股票代码
+                    ticker = COMPANY_DATABASE[selected_company]
+                    stock = yf.Ticker(ticker)
+                    
+                    # 获取财务数据
+                    balance_sheet = stock.balance_sheet
+                    income_stmt = stock.income_stmt
+                    cash_flow = stock.cashflow
+                    
+                    # 显示公司基本信息
+                    st.subheader(f"{selected_company} ({ticker}) 财报分析")
+                    
+                    # 关键财务指标
+                    st.divider()
+                    st.subheader("关键财务指标")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        try:
+                            revenue = income_stmt.loc["Total Revenue"].iloc[0]/1e9
+                            st.metric("营业收入", f"{revenue:.2f} B")
+                        except:
+                            pass
+                        
+                        try:
+                            net_income = income_stmt.loc["Net Income"].iloc[0]/1e9
+                            st.metric("净利润", f"{net_income:.2f} B")
+                        except:
+                            pass
+                    
+                    with col2:
+                        try:
+                            assets = balance_sheet.loc["Total Assets"].iloc[0]/1e9
+                            st.metric("总资产", f"{assets:.2f} B")
+                        except:
+                            pass
+                        
+                        try:
+                            debt = balance_sheet.loc["Total Debt"].iloc[0]/1e9
+                            st.metric("总负债", f"{debt:.2f} B")
+                        except:
+                            pass
+                    
+                    with col3:
+                        try:
+                            operating_cash = cash_flow.loc["Operating Cash Flow"].iloc[0]/1e9
+                            st.metric("经营现金流", f"{operating_cash:.2f} B")
+                        except:
+                            pass
+                        
+                        try:
+                            roe = (income_stmt.loc["Net Income"].iloc[0]/balance_sheet.loc["Total Stockholder Equity"].iloc[0])*100
+                            st.metric("ROE", f"{roe:.2f}%")
+                        except:
+                            pass
+                    
+                    # 财务健康度分析
+                    st.divider()
+                    st.subheader("财务健康度分析")
+                    
+                    try:
+                        current_ratio = balance_sheet.loc["Total Current Assets"].iloc[0]/balance_sheet.loc["Total Current Liabilities"].iloc[0]
+                        st.write(f"**流动比率**: {current_ratio:.2f} (理想值>1.5)")
+                    except:
+                        pass
+                    
+                    try:
+                        debt_to_equity = balance_sheet.loc["Total Debt"].iloc[0]/balance_sheet.loc["Total Stockholder Equity"].iloc[0]
+                        st.write(f"**负债权益比**: {debt_to_equity:.2f} (理想值<1)")
+                    except:
+                        pass
+                    
+                    # 盈利能力分析
+                    st.divider()
+                    st.subheader("盈利能力分析")
+                    
+                    try:
+                        gross_margin = (income_stmt.loc["Gross Profit"].iloc[0]/income_stmt.loc["Total Revenue"].iloc[0])*100
+                        st.write(f"**毛利率**: {gross_margin:.2f}%")
+                    except:
+                        pass
+                    
+                    try:
+                        net_margin = (income_stmt.loc["Net Income"].iloc[0]/income_stmt.loc["Total Revenue"].iloc[0])*100
+                        st.write(f"**净利率**: {net_margin:.2f}%")
+                    except:
+                        pass
+                    
+                    # 生成AI分析总结
+                    st.divider()
+                    st.subheader("AI分析总结")
+                    
+                    # 这里可以接入真正的AI分析，以下为模拟示例
+                    analysis_text = f"""
+                    **{selected_company}**最新财报分析：
+                    
+                    1. **营收规模**: 公司年营收达{revenue:.2f}十亿美元，在行业中处于{'领先' if revenue > 50 else '中等'}水平。
+                    
+                    2. **盈利能力**: 净利率{net_margin:.2f}%，表明公司{'盈利能力强劲' if net_margin > 15 else '盈利能力一般'}。
+                    
+                    3. **财务健康**: 流动比率{current_ratio:.2f}，{'财务结构稳健' if current_ratio > 1.5 else '需关注短期偿债能力'}。
+                    
+                    4. **投资回报**: ROE{roe:.2f}%，为股东创造{'优异' if roe > 20 else '一般'}的回报。
+                    """
+                    
+                    st.write(analysis_text)
+                    
+                except Exception as e:
+                    st.error(f"获取财报数据失败: {str(e)}")
+    else:
+        st.warning("没有找到匹配的公司")
+
+# 侧边栏说明
+st.sidebar.title("使用说明")
+st.sidebar.write("1. 输入公司名称（支持模糊搜索）")
+st.sidebar.write("2. 从下拉列表选择准确公司")
+st.sidebar.write("3. 点击按钮生成财报分析")
+st.sidebar.write("4. 查看关键指标和AI分析")
